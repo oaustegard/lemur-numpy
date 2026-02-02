@@ -1,10 +1,10 @@
-# LEMUR-NumPy: CPU-Only Multi-Vector Retrieval
+# LEMUR-NumPy: CPU-Only Multi-Vector Retrieval for use in Claude.ai containers (and other CPU-only environments)
 
-A PyTorch-free implementation of [LEMUR](https://arxiv.org/abs/2601.21853) (Learned Multi-Vector Retrieval) for GPU-poor environments.
+A PyTorch-free implementation of [LEMUR](https://arxiv.org/abs/2601.21853) (Learned Multi-Vector Retrieval) for GPU-poor environments. Forked from https://github.com/ejaasaari/lemur  
 
 ## TL;DR
 
-**Can LEMUR run without PyTorch on CPU?** Yes. And as of Feb 2026, PyTorch CPU is also installable in Claude containers.
+**Can LEMUR run without PyTorch on CPU?** Yes!. But for claude.ai's container you can also add download.pytorch.org to [the allowlist](https://claude.ai/settings/capabilities), which allows installing the PyTorch CPU version.  
 
 | Metric | Original (PyTorch + C++) | NumPy + Numba |
 |--------|--------------------------|---------------|
@@ -20,7 +20,7 @@ A PyTorch-free implementation of [LEMUR](https://arxiv.org/abs/2601.21853) (Lear
 **Use Original LEMUR (PyTorch):**
 - Training new models in the container
 - Maximum inference speed needed
-- 190MB dependency acceptable
+- 190MB dependency and corresponding startup latency acceptable
 - Full research/development workflow
 
 **Use LEMUR-NumPy:**
