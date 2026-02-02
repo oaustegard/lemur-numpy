@@ -46,29 +46,19 @@ except ImportError:
 if HAS_NUMBA:
     @njit(parallel=True, fastmath=True)
     def _forward_pass_numba(
-        query_embeddings: np.ndarray,
-        W_proj: np.ndarray,
-        b_proj: np.ndarray,
+        features: np.ndarray,
         ln_w: np.ndarray,
         ln_b: np.ndarray,
         offsets: np.ndarray,
         num_queries: int,
         hidden_dim: int
     ) -> np.ndarray:
-        """Fused forward pass: Linear -> LayerNorm -> GELU -> Pool"""
-        total_tokens = query_embeddings.shape[0]
-        embed_dim = query_embeddings.shape[1]
+        """Fused forward pass: LayerNorm -> GELU -> Pool"""
+        total_tokens = features.shape[0]
         
-        features = np.empty((total_tokens, hidden_dim), dtype=np.float32)
+        # We modify features in-place for efficiency
         
         for i in prange(total_tokens):
-            # Linear
-            for j in range(hidden_dim):
-                acc = b_proj[j]
-                for k in range(embed_dim):
-                    acc += query_embeddings[i, k] * W_proj[j, k]
-                features[i, j] = acc
-            
             # LayerNorm
             mean = 0.0
             for j in range(hidden_dim):
@@ -223,9 +213,9 @@ class LemurNumPy:
             return
         
         # Warmup compilation
-        dummy = np.random.randn(10, self.embed_dim).astype(np.float32)
+        dummy_features = np.random.randn(10, self.hidden_dim).astype(np.float32)
         _ = _forward_pass_numba(
-            dummy, self.W_proj, self.b_proj, self.ln_w, self.ln_b,
+            dummy_features, self.ln_w, self.ln_b,
             np.array([0, 5, 10], dtype=np.int64), 2, self.hidden_dim
         )
         self._compiled = True
@@ -251,8 +241,13 @@ class LemurNumPy:
         num_queries = len(counts)
         
         if HAS_NUMBA:
+            # Linear projection using BLAS (much faster than Numba loop)
+            # W_proj: (hidden, embed), embeddings: (tokens, embed) -> (tokens, hidden)
+            features = embeddings @ self.W_proj.T + self.b_proj
+
+            # Element-wise ops + pooling in Numba
             return _forward_pass_numba(
-                embeddings, self.W_proj, self.b_proj, self.ln_w, self.ln_b,
+                features, self.ln_w, self.ln_b,
                 offsets, num_queries, self.hidden_dim
             )
         else:
@@ -425,3 +420,26 @@ if __name__ == "__main__":
     print(f"  Time: {avg_time*1000:.1f}ms")
     print(f"  QPS: {qps:.0f}")
     print(f"  vs Paper (6924 QPS): {qps/6924*100:.1f}%")
+
+    # Benchmark Exact MaxSim (Reranking)
+    print("\nBenchmarking Exact MaxSim...")
+    # Generate fake doc embeddings
+    doc_embeddings = np.random.randn(lemur.num_docs * 32, 128).astype(np.float32)
+    doc_counts = np.full(lemur.num_docs, 32, dtype=np.int32)
+
+    # Warmup
+    lemur.exact_maxsim(
+        query_embeddings[:10], query_counts[:10],
+        doc_embeddings, doc_counts,
+        indices[:10]
+    )
+
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+         lemur.exact_maxsim(
+            query_embeddings, query_counts,
+            doc_embeddings, doc_counts,
+            indices
+        )
+    avg_time_ms = (time.perf_counter() - t0) / iterations
+    print(f"  Time: {avg_time_ms*1000:.1f}ms")
